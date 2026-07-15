@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bowser Snaps</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Bowser Snaps</h1>
+    <button id="capture" class="primary">Snap this page</button>
+  </header>
+  <p class="hint">
+    Or press <kbd>⌘⇧S</kbd> / <kbd>Ctrl+Shift+S</kbd>, then drag.
+    Rebind at <code>chrome://extensions/shortcuts</code>.
+  </p>
+  <label class="setting">
+    <input type="checkbox" id="sidecar">
+    Also download metadata as a <code>.json</code> sidecar
+  </label>
+
+  <h2>Recent snaps</h2>
+  <ul id="captures"></ul>
+  <p id="empty" class="empty" hidden>No snaps yet — take one and it will show up here.</p>
+
+  <template id="capture-item">
+    <li>
+      <img class="thumb" alt="snap thumbnail">
+      <div class="meta">
+        <div class="title"></div>
+        <div class="sub"></div>
+        <div class="actions">
+          <button data-action="copy-report" title="Markdown bug report for pasting into an issue / LLM chat">Copy bug report</button>
+          <button data-action="copy-json" title="Raw metadata JSON">Copy JSON</button>
+          <button data-action="download-json" title="Save metadata as a .json file">JSON ↓</button>
+        </div>
+      </div>
+    </li>
+  </template>
+
+  <script src="popup.js"></script>
+</body>
+</html>

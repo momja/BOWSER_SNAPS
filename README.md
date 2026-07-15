@@ -1,6 +1,11 @@
 # Bowser Snaps 🐢📸
 
-A Chrome extension for region screenshots — as easy as macOS <kbd>⌘⇧4</kbd> — that **embeds rich DOM & component metadata directly into the PNG**. Built for filing bugs that an LLM (or a teammate) can actually investigate: one file carries the pixels *and* the context.
+Region screenshots — as easy as macOS <kbd>⌘⇧4</kbd> — that **embed rich DOM & component metadata directly into the PNG**. Built for filing bugs that an LLM (or a teammate) can actually investigate: one file carries the pixels *and* the context.
+
+Two deliverables in this repo:
+
+- **[`sdk/`](sdk/)** — a pure-ESM, zero-dependency, Chrome-API-free library (selection overlay, metadata collection, error monitor, cropping, PNG chunk I/O, and a high-level `createSnapper`). Embed it in any web app: `npm install github:momja/bowser_snaps` → `import { createSnapper } from 'bowser-snaps'`. See [sdk/README.md](sdk/README.md).
+- **[`extension/`](extension/)** — a thin Chrome MV3 extension built on the SDK, adding what only extensions can do: a global keyboard shortcut, `captureVisibleTab` (no share-picker prompt), works on any site without integration, and a popup with capture history. Built into `dist/` by `npm run build`.
 
 ## What gets captured
 
@@ -18,11 +23,11 @@ Alongside the cropped screenshot, Bowser Snaps collects and embeds:
 
 Everything is stored as pretty-printed JSON in a PNG `iTXt` chunk keyed `bowser-snaps` — lossless, spec-compliant, and survives any tool that preserves ancillary chunks.
 
-## Install
+## Install the extension
 
-1. Clone this repo.
+1. Clone this repo. `dist/` is committed, so no build is needed — but if you've changed sources, run `npm install && npm run build`.
 2. Open `chrome://extensions`, enable **Developer mode**.
-3. Click **Load unpacked** and pick the repo root.
+3. Click **Load unpacked** and pick the `dist/` directory.
 
 Requires Chrome 111+.
 
@@ -79,9 +84,11 @@ Metadata shape (abridged):
 
 ## How it works
 
-- `content.js` (isolated world) draws the crosshair drag overlay in a closed shadow root and reports the selected rect.
-- `page-agent.js` + `collect.js` (MAIN world, `document_start`) hook `console.error`/`warn` and uncaught errors before app code runs, and harvest elements — grid-sampled `elementsFromPoint` stacks *plus* semantic/interactive elements intersecting the selection — with access to framework internals (React fibers, Vue instances) that isolated worlds can't see. If the page agent isn't present (tab predates install), `content.js` falls back to isolated-world collection, minus component names.
-- `background.js` (MV3 service worker) captures the visible tab, crops via `OffscreenCanvas` (scale derived from the actual bitmap, so browser zoom and retina both work), embeds the JSON with `png-meta.js`, downloads the file, and keeps history for the popup.
+All the reusable logic lives in [`sdk/`](sdk/) (see its README for the API); `extension/` is Chrome glue bundled into `dist/` by esbuild (MAIN-world content scripts can't load ESM on strict-CSP pages, hence the build step):
+
+- `extension/content.js` (isolated world) runs the SDK's `selectRegion` overlay and reports the selected rect.
+- `extension/page-agent.js` (MAIN world, `document_start`) runs the SDK's `createErrorMonitor` before app code loads and serves `collectRegionMetadata` requests — the MAIN world sees framework internals (React fibers, Vue instances) that isolated worlds can't. If the page agent isn't present (tab predates install), `content.js` falls back to isolated-world collection, minus component names.
+- `extension/background.js` (MV3 service worker) captures the visible tab, crops via the SDK's `deviceRect`/`cropToPng` (scale derived from the actual bitmap, so browser zoom and retina both work), embeds the JSON with `embedMetadata`, downloads the file, and keeps history for the popup.
 
 ## Privacy
 
@@ -96,8 +103,13 @@ Everything stays local: no network requests, no analytics. Metadata goes only in
 ## Development
 
 ```sh
+npm install
+npm run build                   # bundle extension/ + sdk/ → dist/
+npm test                        # PNG chunk roundtrip vs the independent extractor
+npm run test:e2e                # Playwright drives a real drag-capture in Chromium
+                                # (needs xvfb; BS_CHROMIUM=<path> to pick the binary)
 node tools/generate-icons.mjs   # regenerate icons/
 node tools/extract-metadata.mjs <snap.png>
 ```
 
-The E2E suite (Playwright driving a real Chromium with the extension loaded, asserting collected metadata and the embedded chunk end-to-end) lives in the session scratchpad; the PNG chunk writer is also covered by a Node roundtrip test against the independent extractor.
+The E2E suite loads the built `dist/` extension into a real Chromium, drags out a selection, and asserts the stored metadata (elements, React component detection, console errors) and the PNG's embedded chunk end-to-end. Re-run `npm run build` and commit `dist/` when extension or SDK sources change.
