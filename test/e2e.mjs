@@ -75,7 +75,16 @@ try {
   await page.mouse.move(430, 230, { steps: 8 });
   await page.mouse.up();
 
-  // Wait for the pipeline: capture → crop → embed → download → storage.
+  // The report dialog opens (autofocused textarea in a closed shadow root —
+  // unreachable by locators, so drive it purely via the keyboard). The
+  // description deliberately mixes quotes, markdown, newlines, and
+  // backslashes to prove JSON escaping survives the PNG roundtrip.
+  const DESCRIPTION = 'Pay button says "Pay now" but **overlaps** the total.\nRepro: resize < 400px & click \\ backslash';
+  await page.waitForTimeout(1000);
+  await page.keyboard.type(DESCRIPTION);
+  await page.keyboard.press('Control+Enter');
+
+  // Wait for the pipeline: capture → crop → report → embed → download → storage.
   let captures = [];
   for (let i = 0; i < 40 && captures.length === 0; i++) {
     await page.waitForTimeout(250);
@@ -84,6 +93,9 @@ try {
   assert.strictEqual(captures.length, 1, 'one capture stored');
 
   const meta = captures[0].metadata;
+  assert.strictEqual(meta.format, 'bowser-snaps', 'format discriminator present');
+  assert.strictEqual(meta.schemaVersion, 2, 'schema version present');
+  assert.strictEqual(meta.report.description, DESCRIPTION, 'bug description stored verbatim');
   assert.strictEqual(meta.page.url, `http://127.0.0.1:${PORT}/`, 'page url recorded');
   assert.strictEqual(meta.page.path, '/', 'path recorded');
   assert.ok(meta.selection.width >= 395 && meta.selection.width <= 405, `selection width ~400, got ${meta.selection.width}`);
@@ -126,6 +138,7 @@ try {
     execFileSync('node', [join(ROOT, 'tools/extract-metadata.mjs'), done.filename], { encoding: 'utf8' })
   );
   assert.strictEqual(extracted.page.url, meta.page.url, 'embedded metadata matches');
+  assert.strictEqual(extracted.report.description, DESCRIPTION, 'description survives PNG embed/extract with escaping intact');
   assert.ok(extracted.elements.some((e) => e.selector === '#pay-button'), 'embedded metadata has elements');
 
   // Sanity: PNG pixel size matches reported crop size.

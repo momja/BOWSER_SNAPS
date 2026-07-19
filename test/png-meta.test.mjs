@@ -35,4 +35,10 @@ assert.deepStrictEqual(JSON.parse(extracted), metadata, 'independent extractor r
 const tail = stamped.subarray(stamped.length - 12);
 assert.strictEqual(String.fromCharCode(...tail.subarray(4, 8)), 'IEND', 'IEND still last');
 
-console.log('png-meta roundtrip: all assertions passed');
+// The published schema must stay valid JSON and pin the current version.
+const schema = JSON.parse(readFileSync(join(ROOT, 'schema/bowser-snaps.schema.json'), 'utf8'));
+assert.strictEqual(schema.properties.format.const, 'bowser-snaps', 'schema format constant');
+assert.strictEqual(schema.properties.schemaVersion.const, 2, 'schema version constant');
+assert.ok(schema.required.includes('report'), 'schema requires report');
+
+console.log('png-meta roundtrip + schema: all assertions passed');

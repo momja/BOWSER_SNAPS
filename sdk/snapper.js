@@ -9,8 +9,10 @@ import { collectRegionMetadata } from './collect.js';
 import { buildPageContext } from './page-context.js';
 import { deviceRect, cropToPng } from './crop.js';
 import { embedMetadata } from './png-meta.js';
+import { promptBugReport } from './report-dialog.js';
+import { FORMAT, SCHEMA_VERSION, METADATA_KEYWORD } from './schema.js';
 
-export const METADATA_KEYWORD = 'bowser-snaps';
+export { METADATA_KEYWORD };
 
 /**
  * @param {object} options
@@ -24,13 +26,17 @@ export const METADATA_KEYWORD = 'bowser-snaps';
  * @param {object} [options.tool] Identifies the producing app in metadata.
  * @param {(rect) => object|Promise<object>} [options.collect]
  *   Override metadata collection (default: collectRegionMetadata).
+ * @param {boolean} [options.promptReport]
+ *   Show the bug-report dialog after capture (default true). The pixels are
+ *   captured before the dialog opens, so it never appears in the screenshot.
  */
 export function createSnapper({
   capture,
   errorMonitor = null,
   keyword = METADATA_KEYWORD,
-  tool = { name: 'bowser-snaps-sdk', version: '1.0.0' },
-  collect = collectRegionMetadata
+  tool = { name: 'bowser-snaps-sdk', version: '1.1.0' },
+  collect = collectRegionMetadata,
+  promptReport = true
 } = {}) {
   if (typeof capture !== 'function') {
     throw new TypeError('createSnapper requires a capture({rect, viewport}) function returning viewport pixels');
@@ -54,10 +60,27 @@ export function createSnapper({
       const dr = deviceRect(rect, viewport, bitmap.width, bitmap.height);
       const png = await cropToPng(bitmap, dr);
 
+      // Pixels are frozen; now ask for the human half of the bug report.
+      let report = { description: null };
+      if (promptReport) {
+        const previewUrl = URL.createObjectURL(new Blob([png], { type: 'image/png' }));
+        let outcome;
+        try {
+          outcome = await promptBugReport({ thumbnailUrl: previewUrl });
+        } finally {
+          URL.revokeObjectURL(previewUrl);
+        }
+        if (outcome.action === 'discard') return null;
+        if (outcome.action === 'save') report = { description: outcome.description };
+      }
+
       const capturedAt = new Date().toISOString();
       const metadata = {
+        format: FORMAT,
+        schemaVersion: SCHEMA_VERSION,
         tool,
         capturedAt,
+        report,
         image: {
           width: dr.sw,
           height: dr.sh,

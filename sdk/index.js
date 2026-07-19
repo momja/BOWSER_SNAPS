@@ -9,6 +9,8 @@
 //   downloadSnap                — save a snap() result
 //
 // Building blocks (used by the Chrome extension, reusable individually):
+//   promptBugReport             — post-capture bug description dialog
+//   FORMAT / SCHEMA_VERSION     — metadata envelope contract (see SCHEMA.md)
 //   selectRegion / showToast    — drag-select overlay UI
 //   collectRegionMetadata       — elements/components/frameworks/DOM snippet
 //   createErrorMonitor          — console/error rolling buffer
@@ -16,10 +18,12 @@
 //   deviceRect / cropToPng / cropToJpegThumbnail — bitmap cropping
 //   embedMetadata / readMetadata / toBase64 — PNG iTXt chunk I/O
 
-export { createSnapper, captureViaDisplayMedia, downloadSnap, METADATA_KEYWORD } from './snapper.js';
+export { createSnapper, captureViaDisplayMedia, downloadSnap } from './snapper.js';
+export { promptBugReport } from './report-dialog.js';
+export { FORMAT, SCHEMA_VERSION, METADATA_KEYWORD } from './schema.js';
 export { selectRegion, showToast } from './selection-overlay.js';
 export { collectRegionMetadata, detectFrameworks } from './collect.js';
 export { createErrorMonitor } from './error-monitor.js';
 export { buildPageContext } from './page-context.js';
 export { deviceRect, cropToPng, cropToJpegThumbnail } from './crop.js';
-export { embedMetadata, readMetadata, toBase64, isPng, crc32 } from './png-meta.js';
+export { embedMetadata, readMetadata, toBase64, fromBase64, isPng, crc32 } from './png-meta.js';

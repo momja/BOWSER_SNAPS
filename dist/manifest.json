@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bowser Snaps",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minimum_chrome_version": "111",
   "description": "Region screenshots (like macOS Cmd+Shift+4) that embed DOM & component metadata into the PNG — built for filing LLM-ready bug reports.",
   "permissions": ["activeTab", "scripting", "downloads", "storage"],

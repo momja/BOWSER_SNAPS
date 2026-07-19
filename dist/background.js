@@ -71,6 +71,12 @@
     }
     return btoa(binary);
   }
+  function fromBase64(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
 
   // sdk/crop.js
   function deviceRect(rect, viewport, bitmapWidth, bitmapHeight) {
@@ -96,7 +102,9 @@
     return new Uint8Array(await blob.arrayBuffer());
   }
 
-  // sdk/snapper.js
+  // sdk/schema.js
+  var FORMAT = "bowser-snaps";
+  var SCHEMA_VERSION = 2;
   var METADATA_KEYWORD = "bowser-snaps";
 
   // extension/background.js
@@ -113,6 +121,11 @@
       chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => startCapture(tab)).catch((err) => console.error("bowser-snaps:", err));
     } else if (msg.type === "BS_REGION_SELECTED" && sender.tab) {
       handleRegion(msg, sender.tab).catch((err) => {
+        console.error("bowser-snaps:", err);
+        sendToTab(sender.tab.id, { type: "BS_CAPTURE_FAILED", error: err && err.message ? err.message : String(err) });
+      });
+    } else if (msg.type === "BS_REPORT_SUBMITTED" && sender.tab) {
+      (msg.discard ? discardCapture(msg.captureId) : finalizeCapture(msg.captureId, msg.report)).catch((err) => {
         console.error("bowser-snaps:", err);
         sendToTab(sender.tab.id, { type: "BS_CAPTURE_FAILED", error: err && err.message ? err.message : String(err) });
       });
@@ -143,10 +156,14 @@
     const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
     const dr = deviceRect(msg.rect, msg.viewport, bitmap.width, bitmap.height);
     const cropped = await cropToPng(bitmap, dr);
+    const thumbBytes = await cropToJpegThumbnail(bitmap, dr);
     const capturedAt = (/* @__PURE__ */ new Date()).toISOString();
     const metadata = {
+      format: FORMAT,
+      schemaVersion: SCHEMA_VERSION,
       tool: { name: "bowser-snaps", version: chrome.runtime.getManifest().version },
       capturedAt,
+      report: { description: null },
       image: {
         width: dr.sw,
         height: dr.sh,
@@ -155,9 +172,38 @@
       },
       ...msg.metadata
     };
+    const captureId = crypto.randomUUID();
+    const pending = {
+      id: captureId,
+      tabId: tab.id,
+      capturedAt,
+      url: metadata.page && metadata.page.url || tab.url || "",
+      title: tab.title || "",
+      pngBase64: toBase64(cropped),
+      thumbnail: `data:image/jpeg;base64,${toBase64(thumbBytes)}`,
+      metadata
+    };
+    await chrome.storage.session.set({ [`pending:${captureId}`]: pending });
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        type: "BS_REQUEST_REPORT",
+        captureId,
+        thumbnail: pending.thumbnail
+      });
+    } catch {
+      await finalizeCapture(captureId, { description: null });
+    }
+  }
+  async function finalizeCapture(captureId, report) {
+    const key = `pending:${captureId}`;
+    const { [key]: pending } = await chrome.storage.session.get(key);
+    if (!pending) throw new Error("capture expired before it could be saved");
+    await chrome.storage.session.remove(key);
+    const metadata = pending.metadata;
+    metadata.report = { description: report && report.description || null };
     const metadataJson = JSON.stringify(metadata, null, 2);
-    const stamped = embedMetadata(cropped, METADATA_KEYWORD, metadataJson);
-    const filename = `bowser-snaps/snap-${capturedAt.replace(/[:.]/g, "-")}.png`;
+    const stamped = embedMetadata(fromBase64(pending.pngBase64), METADATA_KEYWORD, metadataJson);
+    const filename = `bowser-snaps/snap-${pending.capturedAt.replace(/[:.]/g, "-")}.png`;
     await chrome.downloads.download({
       url: `data:image/png;base64,${toBase64(stamped)}`,
       filename,
@@ -171,17 +217,19 @@
         conflictAction: "uniquify"
       });
     }
-    const thumbBytes = await cropToJpegThumbnail(bitmap, dr);
     await storeCapture({
-      id: crypto.randomUUID(),
-      capturedAt,
-      url: metadata.page && metadata.page.url || tab.url || "",
-      title: tab.title || "",
+      id: captureId,
+      capturedAt: pending.capturedAt,
+      url: pending.url,
+      title: pending.title,
       filename,
-      thumbnail: `data:image/jpeg;base64,${toBase64(thumbBytes)}`,
+      thumbnail: pending.thumbnail,
       metadata
     });
-    sendToTab(tab.id, { type: "BS_CAPTURE_DONE", filename });
+    sendToTab(pending.tabId, { type: "BS_CAPTURE_DONE", filename });
+  }
+  async function discardCapture(captureId) {
+    await chrome.storage.session.remove(`pending:${captureId}`);
   }
   async function storeCapture(record) {
     const { captures = [] } = await chrome.storage.local.get("captures");

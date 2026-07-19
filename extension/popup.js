@@ -29,6 +29,10 @@
     item.querySelector('.title').title = capture.url;
     item.querySelector('.sub').textContent =
       `${new Date(capture.capturedAt).toLocaleString()} · ${shortName(capture.filename)}`;
+    const description = capture.metadata?.report?.description;
+    const descEl = item.querySelector('.desc');
+    if (description) descEl.textContent = description;
+    else descEl.remove();
     item.querySelector('[data-action="copy-report"]').addEventListener('click', (e) =>
       copyWithFeedback(e.target, buildReport(capture)));
     item.querySelector('[data-action="copy-json"]').addEventListener('click', (e) =>
@@ -75,6 +79,13 @@
     if (m.frameworks?.length) lines.push(`- **Frameworks:** ${m.frameworks.join(', ')}`);
     lines.push(`- **Screenshot:** \`${shortName(capture.filename)}\` (full metadata embedded as PNG iTXt chunk \`bowser-snaps\`)`);
     lines.push('');
+
+    if (m.report?.description) {
+      lines.push('### Reported issue');
+      lines.push('');
+      lines.push(m.report.description);
+      lines.push('');
+    }
 
     const elements = (m.elements || []).slice(0, 15);
     if (elements.length) {

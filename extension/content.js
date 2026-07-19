@@ -5,6 +5,7 @@
 import { selectRegion, showToast } from '../sdk/selection-overlay.js';
 import { collectRegionMetadata } from '../sdk/collect.js';
 import { buildPageContext } from '../sdk/page-context.js';
+import { promptBugReport } from '../sdk/report-dialog.js';
 
 (() => {
   'use strict';
@@ -15,6 +16,11 @@ import { buildPageContext } from '../sdk/page-context.js';
     if (!msg) return;
     if (msg.type === 'BS_START_CAPTURE') {
       run().catch(() => showToast('Capture failed while collecting metadata', { isError: true }));
+    } else if (msg.type === 'BS_REQUEST_REPORT') {
+      handleReportRequest(msg).catch(() => {
+        // If the dialog can't render, still save the snap rather than lose it.
+        chrome.runtime.sendMessage({ type: 'BS_REPORT_SUBMITTED', captureId: msg.captureId, report: { description: null } });
+      });
     } else if (msg.type === 'BS_CAPTURE_DONE') {
       showToast(`Saved ${msg.filename} — metadata embedded in the PNG`);
     } else if (msg.type === 'BS_CAPTURE_FAILED') {
@@ -51,6 +57,22 @@ import { buildPageContext } from '../sdk/page-context.js';
         domSnippet: collected.domSnippet || null,
         consoleErrors: collected.consoleErrors || []
       }
+    });
+  }
+
+  // The service worker has the pixels frozen; collect the human half of the
+  // bug report and send it back to finalize (or discard) the capture.
+  async function handleReportRequest(msg) {
+    const outcome = await promptBugReport({ thumbnailUrl: msg.thumbnail || null });
+    if (outcome.action === 'discard') {
+      chrome.runtime.sendMessage({ type: 'BS_REPORT_SUBMITTED', captureId: msg.captureId, discard: true });
+      showToast('Snap discarded');
+      return;
+    }
+    chrome.runtime.sendMessage({
+      type: 'BS_REPORT_SUBMITTED',
+      captureId: msg.captureId,
+      report: { description: outcome.action === 'save' ? outcome.description : null }
     });
   }
 

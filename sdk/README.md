@@ -40,15 +40,17 @@ const snapper = createSnapper({
 
 // 3. Wire it to a button / hotkey.
 document.getElementById('report-bug').addEventListener('click', async () => {
-  const snap = await snapper.snap();     // user drags a region; null if cancelled
-  if (!snap) return;
+  const snap = await snapper.snap();     // drag a region → bug-report dialog;
+  if (!snap) return;                     // null if cancelled/discarded
 
   downloadSnap(snap);                    // or upload snap.blob / snap.bytes
-  console.log(snap.metadata);            // the same JSON that's inside the PNG
+  console.log(snap.metadata.report);     // { description } from the dialog
 });
 ```
 
-`snap()` resolves to `{ bytes, blob, metadata, suggestedFilename }` — a cropped PNG whose `iTXt` chunk (keyword `bowser-snaps`) contains the URL/path, viewport & scroll state, every element in the region (selectors, ids, classes, text, `data-*`/`aria-*` attributes, React/Vue/Angular component names when detectable), detected frameworks, a sanitized DOM snippet, and the buffered console errors.
+After the region is selected and the pixels are frozen, `snap()` shows a bug-report dialog (with a preview of the capture) where the user describes the issue — markdown welcome, stored verbatim in `metadata.report.description` (JSON-escaped by serialization; `null` if skipped). Pass `promptReport: false` to `createSnapper` to disable the dialog, or use the `promptBugReport()` export directly for a custom flow.
+
+`snap()` resolves to `{ bytes, blob, metadata, suggestedFilename }` — a cropped PNG whose `iTXt` chunk (keyword `bowser-snaps`) contains the user's bug description, URL/path, viewport & scroll state, every element in the region (selectors, ids, classes, text, `data-*`/`aria-*` attributes, React/Vue/Angular component names when detectable), detected frameworks, a sanitized DOM snippet, and the buffered console errors. The JSON layout is a documented, versioned contract (`format` / `schemaVersion` envelope) — see [../SCHEMA.md](../SCHEMA.md) and the JSON Schema in [`../schema/`](../schema/).
 
 ### Bring your own pixels
 
@@ -73,6 +75,8 @@ All exported from `bowser-snaps` (see `index.js`); each is usable on its own:
 
 | Export | What it does |
 | --- | --- |
+| `promptBugReport({ thumbnailUrl? })` | post-capture description dialog; resolves `{action: 'save', description}` \| `{action: 'skip'}` \| `{action: 'discard'}` |
+| `FORMAT`, `SCHEMA_VERSION`, `METADATA_KEYWORD` | the metadata envelope contract constants |
 | `selectRegion({ hintText? })` | macOS-style drag overlay; resolves `{x, y, width, height}` in CSS px, or `null` on cancel — after the overlay is gone and the page repainted |
 | `showToast(text, { isError? })` | shadow-DOM toast used for capture feedback |
 | `collectRegionMetadata(rect)` | `{ elements, frameworks, domSnippet }` for a viewport rect |

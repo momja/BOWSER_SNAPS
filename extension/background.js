@@ -1,9 +1,17 @@
 // MV3 service worker — the Chrome-only side of a capture: captureVisibleTab,
 // crop + embed via the SDK, download, and popup history in storage.
+//
+// A capture is two-phase: pixels are grabbed and cropped the moment the
+// region is selected (so the bug-report dialog never appears in the shot and
+// the page can't drift while the user types), parked in
+// chrome.storage.session, and finalized — report merged, metadata embedded,
+// file downloaded — when the dialog resolves. Session storage survives
+// service-worker recycling during a slow write-up.
+//
 // Bundled with its SDK imports by tools/build.mjs.
-import { embedMetadata, toBase64 } from '../sdk/png-meta.js';
+import { embedMetadata, toBase64, fromBase64 } from '../sdk/png-meta.js';
 import { deviceRect, cropToPng, cropToJpegThumbnail } from '../sdk/crop.js';
-import { METADATA_KEYWORD } from '../sdk/snapper.js';
+import { FORMAT, SCHEMA_VERSION, METADATA_KEYWORD } from '../sdk/schema.js';
 
 const HISTORY_LIMIT = 10;
 const RESTRICTED_URL = /^(chrome|chrome-extension|edge|about|devtools|view-source):|^https:\/\/chromewebstore\.google\.com\//;
@@ -25,6 +33,12 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       console.error('bowser-snaps:', err);
       sendToTab(sender.tab.id, { type: 'BS_CAPTURE_FAILED', error: err && err.message ? err.message : String(err) });
     });
+  } else if (msg.type === 'BS_REPORT_SUBMITTED' && sender.tab) {
+    (msg.discard ? discardCapture(msg.captureId) : finalizeCapture(msg.captureId, msg.report))
+      .catch((err) => {
+        console.error('bowser-snaps:', err);
+        sendToTab(sender.tab.id, { type: 'BS_CAPTURE_FAILED', error: err && err.message ? err.message : String(err) });
+      });
   }
 });
 
@@ -54,17 +68,22 @@ async function startCapture(tab) {
 // commands can't be synthesized from test code.
 globalThis.__bowserSnapsStartCapture = startCapture;
 
+// Phase 1: freeze the pixels, then ask the page for the bug description.
 async function handleRegion(msg, tab) {
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
   const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
 
   const dr = deviceRect(msg.rect, msg.viewport, bitmap.width, bitmap.height);
   const cropped = await cropToPng(bitmap, dr);
+  const thumbBytes = await cropToJpegThumbnail(bitmap, dr);
 
   const capturedAt = new Date().toISOString();
   const metadata = {
+    format: FORMAT,
+    schemaVersion: SCHEMA_VERSION,
     tool: { name: 'bowser-snaps', version: chrome.runtime.getManifest().version },
     capturedAt,
+    report: { description: null },
     image: {
       width: dr.sw,
       height: dr.sh,
@@ -73,10 +92,46 @@ async function handleRegion(msg, tab) {
     },
     ...msg.metadata
   };
+
+  const captureId = crypto.randomUUID();
+  const pending = {
+    id: captureId,
+    tabId: tab.id,
+    capturedAt,
+    url: (metadata.page && metadata.page.url) || tab.url || '',
+    title: tab.title || '',
+    pngBase64: toBase64(cropped),
+    thumbnail: `data:image/jpeg;base64,${toBase64(thumbBytes)}`,
+    metadata
+  };
+  await chrome.storage.session.set({ [`pending:${captureId}`]: pending });
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, {
+      type: 'BS_REQUEST_REPORT',
+      captureId,
+      thumbnail: pending.thumbnail
+    });
+  } catch {
+    // Page can't show the dialog (navigated away mid-capture) — don't lose
+    // the snap, save it without a description.
+    await finalizeCapture(captureId, { description: null });
+  }
+}
+
+// Phase 2: merge the report, embed metadata, and save.
+async function finalizeCapture(captureId, report) {
+  const key = `pending:${captureId}`;
+  const { [key]: pending } = await chrome.storage.session.get(key);
+  if (!pending) throw new Error('capture expired before it could be saved');
+  await chrome.storage.session.remove(key);
+
+  const metadata = pending.metadata;
+  metadata.report = { description: (report && report.description) || null };
   const metadataJson = JSON.stringify(metadata, null, 2);
 
-  const stamped = embedMetadata(cropped, METADATA_KEYWORD, metadataJson);
-  const filename = `bowser-snaps/snap-${capturedAt.replace(/[:.]/g, '-')}.png`;
+  const stamped = embedMetadata(fromBase64(pending.pngBase64), METADATA_KEYWORD, metadataJson);
+  const filename = `bowser-snaps/snap-${pending.capturedAt.replace(/[:.]/g, '-')}.png`;
   await chrome.downloads.download({
     url: `data:image/png;base64,${toBase64(stamped)}`,
     filename,
@@ -92,18 +147,21 @@ async function handleRegion(msg, tab) {
     });
   }
 
-  const thumbBytes = await cropToJpegThumbnail(bitmap, dr);
   await storeCapture({
-    id: crypto.randomUUID(),
-    capturedAt,
-    url: (metadata.page && metadata.page.url) || tab.url || '',
-    title: tab.title || '',
+    id: captureId,
+    capturedAt: pending.capturedAt,
+    url: pending.url,
+    title: pending.title,
     filename,
-    thumbnail: `data:image/jpeg;base64,${toBase64(thumbBytes)}`,
+    thumbnail: pending.thumbnail,
     metadata
   });
 
-  sendToTab(tab.id, { type: 'BS_CAPTURE_DONE', filename });
+  sendToTab(pending.tabId, { type: 'BS_CAPTURE_DONE', filename });
+}
+
+async function discardCapture(captureId) {
+  await chrome.storage.session.remove(`pending:${captureId}`);
 }
 
 async function storeCapture(record) {

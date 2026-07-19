@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/momja/bowser_snaps/schema/bowser-snaps.schema.json",
+  "title": "Bowser Snaps capture metadata",
+  "description": "The JSON document embedded in every snap's PNG iTXt chunk (keyword `bowser-snaps`) and emitted as the optional .json sidecar. Consumers should key off `format` + `schemaVersion` and ignore unknown fields; new fields are only added within a schemaVersion, breaking changes bump it.",
+  "type": "object",
+  "required": ["format", "schemaVersion", "tool", "capturedAt", "report", "image", "page", "selection", "frameworks", "elements", "domSnippet", "consoleErrors"],
+  "properties": {
+    "format": { "const": "bowser-snaps" },
+    "schemaVersion": { "const": 2 },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "report": {
+      "type": "object",
+      "description": "The human half of the bug report, entered in the post-capture dialog. `description` is stored verbatim (may contain markdown, newlines, any unicode — standard JSON string escaping applies); null when the user skipped the note.",
+      "required": ["description"],
+      "properties": {
+        "description": { "type": ["string", "null"], "maxLength": 5000 }
+      }
+    },
+    "image": {
+      "type": "object",
+      "description": "The cropped screenshot's pixel dimensions and the CSS-px → image-px scale factor.",
+      "required": ["width", "height", "scale"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "scale": { "type": "number", "exclusiveMinimum": 0 },
+        "note": { "type": "string" }
+      }
+    },
+    "page": {
+      "type": "object",
+      "required": ["url", "path", "title", "viewport", "devicePixelRatio", "scroll", "userAgent"],
+      "properties": {
+        "url": { "type": "string" },
+        "path": { "type": "string" },
+        "query": { "type": ["string", "null"] },
+        "hash": { "type": ["string", "null"] },
+        "title": { "type": "string" },
+        "referrer": { "type": ["string", "null"] },
+        "viewport": { "$ref": "#/$defs/size" },
+        "devicePixelRatio": { "type": "number" },
+        "scroll": { "$ref": "#/$defs/point" },
+        "documentSize": { "$ref": "#/$defs/size" },
+        "userAgent": { "type": "string" },
+        "language": { "type": "string" }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "description": "The user-dragged region, in CSS px relative to the viewport at capture time.",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "unit": { "type": "string" },
+        "pagePosition": { "$ref": "#/$defs/point" }
+      }
+    },
+    "frameworks": {
+      "type": "array",
+      "description": "Detected frontend frameworks, e.g. \"react\", \"next.js\", \"angular@17.0.3\".",
+      "items": { "type": "string" }
+    },
+    "elements": {
+      "type": "array",
+      "description": "Elements within the selection, most specific (smallest area) first.",
+      "items": {
+        "type": "object",
+        "required": ["selector", "tag", "rectInScreenshot", "coverage"],
+        "properties": {
+          "selector": { "type": "string", "description": "CSS selector path, id-anchored when possible" },
+          "tag": { "type": "string" },
+          "rectInScreenshot": {
+            "type": "object",
+            "description": "Element bounds relative to the screenshot's top-left, CSS px (multiply by image.scale for image px).",
+            "required": ["x", "y", "width", "height"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" }
+            }
+          },
+          "coverage": { "enum": ["fully-visible", "partially-visible"] },
+          "id": { "type": "string" },
+          "classes": { "type": "array", "items": { "type": "string" }, "maxItems": 12 },
+          "component": {
+            "type": "object",
+            "description": "Source component owning this DOM node, when detectable (React fiber, Vue instance, Angular debug hook).",
+            "required": ["framework"],
+            "properties": {
+              "framework": { "enum": ["react", "vue", "angular"] },
+              "name": { "type": ["string", "null"] },
+              "ownerChain": { "type": "array", "items": { "type": "string" }, "maxItems": 3 }
+            }
+          },
+          "text": { "type": "string", "description": "Element's own visible text, truncated" },
+          "attributes": {
+            "type": "object",
+            "description": "Semantic attributes: role/name/type/href/src/alt/title/placeholder/for/value/disabled/contenteditable plus any data-* and aria-*; values truncated.",
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+    "domSnippet": {
+      "type": ["string", "null"],
+      "description": "Sanitized outerHTML of the smallest container spanning the selection; scripts/styles removed, long attribute values and total length truncated."
+    },
+    "consoleErrors": {
+      "type": "array",
+      "description": "Rolling buffer (oldest first, max 30) of console/error activity up to capture time.",
+      "items": {
+        "type": "object",
+        "required": ["type", "message", "at"],
+        "properties": {
+          "type": { "enum": ["console.error", "console.warn", "uncaught-exception", "unhandled-rejection"] },
+          "message": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "source": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"] },
+          "column": { "type": ["integer", "null"] },
+          "stack": { "type": ["string", "null"] }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "size": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "number" },
+        "height": { "type": "number" }
+      }
+    },
+    "point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    }
+  }
+}

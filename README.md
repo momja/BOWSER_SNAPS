@@ -13,6 +13,7 @@ Alongside the cropped screenshot, Bowser Snaps collects and embeds:
 
 | Data | Why an LLM cares |
 | --- | --- |
+| **Your bug description** — a dialog after each capture lets you say what's wrong (markdown welcome), stored verbatim in the metadata | The intent: what's broken and what was expected |
 | **URL, path, query, hash, title** | Locates the route/page in the codebase |
 | **Elements in the selection** — tag, `id`, classes, CSS selector, text, `data-*` / `aria-*` / semantic attributes, position within the screenshot | Maps pixels to source code |
 | **Component names** — React (fiber owner chain), Vue 2/3, Angular | Jumps straight to the component file |
@@ -36,7 +37,8 @@ Requires Chrome 111+.
 1. Press <kbd>⌘⇧S</kbd> (mac) / <kbd>Ctrl+Shift+S</kbd>, or click the toolbar icon → **Snap this page**.
    (Browsers can't intercept the OS-level <kbd>⌘⇧4</kbd>; rebind the shortcut to your liking at `chrome://extensions/shortcuts`.)
 2. Drag over the buggy region. <kbd>Esc</kbd> cancels.
-3. The cropped PNG (metadata embedded) lands in `Downloads/bowser-snaps/`.
+3. Describe the bug in the dialog that appears (markdown welcome) — <kbd>⌘/Ctrl+Enter</kbd> or **Save snap** to save, **Skip note** to save without a description, <kbd>Esc</kbd> to discard. The pixels are captured *before* the dialog opens, so it's never in the shot and the page can't drift while you type.
+4. The cropped PNG (metadata embedded) lands in `Downloads/bowser-snaps/`.
 
 The popup keeps your 10 most recent snaps with three one-click outputs:
 
@@ -52,12 +54,17 @@ node tools/extract-metadata.mjs snap-2026-07-14T05-30-12-123Z.png
 
 or with exiftool (the chunk is standard): `exiftool -b -PNG:all snap.png`.
 
+**The JSON structure is a documented contract** — see [SCHEMA.md](SCHEMA.md) for the field-by-field integration guide and [`schema/bowser-snaps.schema.json`](schema/bowser-snaps.schema.json) for the machine-readable JSON Schema. Key off `format` + `schemaVersion` and ignore unknown fields.
+
 Metadata shape (abridged):
 
 ```json
 {
-  "tool": { "name": "bowser-snaps", "version": "1.0.0" },
+  "format": "bowser-snaps",
+  "schemaVersion": 2,
+  "tool": { "name": "bowser-snaps", "version": "1.1.0" },
   "capturedAt": "2026-07-14T05:40:05.123Z",
+  "report": { "description": "Pay button **overlaps** the total.\nRepro: resize < 400px" },
   "image": { "width": 400, "height": 170, "scale": 1, "note": "…css px → image px…" },
   "page": { "url": "…", "path": "/checkout", "viewport": {…}, "devicePixelRatio": 2, "scroll": {…}, "userAgent": "…" },
   "selection": { "x": 30, "y": 60, "width": 400, "height": 170, "pagePosition": {…} },
