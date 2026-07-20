@@ -7,6 +7,7 @@
   const empty = document.getElementById('empty');
   const template = document.getElementById('capture-item');
   const sidecar = document.getElementById('sidecar');
+  const folder = document.getElementById('folder');
 
   document.getElementById('capture').addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'BS_START_CAPTURE_ACTIVE_TAB' });
@@ -16,7 +17,14 @@
   const { settings = {} } = await chrome.storage.local.get('settings');
   sidecar.checked = Boolean(settings.sidecarJson);
   sidecar.addEventListener('change', () => {
-    chrome.storage.local.set({ settings: { ...settings, sidecarJson: sidecar.checked } });
+    settings.sidecarJson = sidecar.checked;
+    chrome.storage.local.set({ settings });
+  });
+
+  folder.value = settings.folder ?? 'bowser-snaps';
+  folder.addEventListener('change', () => {
+    settings.folder = folder.value.trim();
+    chrome.storage.local.set({ settings });
   });
 
   const { captures = [] } = await chrome.storage.local.get('captures');

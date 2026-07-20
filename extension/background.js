@@ -14,7 +14,20 @@ import { deviceRect, cropToPng, cropToJpegThumbnail } from '../sdk/crop.js';
 import { FORMAT, SCHEMA_VERSION, METADATA_KEYWORD } from '../sdk/schema.js';
 
 const HISTORY_LIMIT = 10;
+const DEFAULT_FOLDER = 'bowser-snaps';
 const RESTRICTED_URL = /^(chrome|chrome-extension|edge|about|devtools|view-source):|^https:\/\/chromewebstore\.google\.com\//;
+
+// chrome.downloads.download() only accepts paths relative to the Downloads
+// directory — no absolute paths, no "..". Strip anything that would violate
+// that (or land the file outside the intended subtree) rather than letting
+// the download call reject the whole capture.
+function sanitizeFolder(raw) {
+  return String(raw || '')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && segment !== '.' && segment !== '..')
+    .join('/');
+}
 
 chrome.commands.onCommand.addListener((command, tab) => {
   if (command === 'start-capture') {
@@ -130,15 +143,17 @@ async function finalizeCapture(captureId, report) {
   metadata.report = { description: (report && report.description) || null };
   const metadataJson = JSON.stringify(metadata, null, 2);
 
+  const { settings = {} } = await chrome.storage.local.get('settings');
+  const folder = sanitizeFolder(settings.folder ?? DEFAULT_FOLDER);
+
   const stamped = embedMetadata(fromBase64(pending.pngBase64), METADATA_KEYWORD, metadataJson);
-  const filename = `bowser-snaps/snap-${pending.capturedAt.replace(/[:.]/g, '-')}.png`;
+  const filename = `${folder ? folder + '/' : ''}snap-${pending.capturedAt.replace(/[:.]/g, '-')}.png`;
   await chrome.downloads.download({
     url: `data:image/png;base64,${toBase64(stamped)}`,
     filename,
     conflictAction: 'uniquify'
   });
 
-  const { settings = {} } = await chrome.storage.local.get('settings');
   if (settings.sidecarJson) {
     await chrome.downloads.download({
       url: `data:application/json;base64,${toBase64(new TextEncoder().encode(metadataJson))}`,

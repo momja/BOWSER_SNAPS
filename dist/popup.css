@@ -73,6 +73,17 @@ kbd, code {
   cursor: pointer;
 }
 
+.setting-folder input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  font: 12px ui-monospace, monospace;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
 ul {
   list-style: none;
   margin: 0;

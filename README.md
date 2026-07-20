@@ -38,13 +38,14 @@ Requires Chrome 111+.
    (Browsers can't intercept the OS-level <kbd>⌘⇧4</kbd>; rebind the shortcut to your liking at `chrome://extensions/shortcuts`.)
 2. Drag over the buggy region. <kbd>Esc</kbd> cancels.
 3. Describe the bug in the dialog that appears (markdown welcome) — <kbd>⌘/Ctrl+Enter</kbd> or **Save snap** to save, **Skip note** to save without a description, <kbd>Esc</kbd> to discard. The pixels are captured *before* the dialog opens, so it's never in the shot and the page can't drift while you type.
-4. The cropped PNG (metadata embedded) lands in `Downloads/bowser-snaps/`.
+4. The cropped PNG (metadata embedded) lands in `Downloads/bowser-snaps/` (configurable in the popup settings — see below).
 
 The popup keeps your 10 most recent snaps with three one-click outputs:
 
 - **Copy bug report** — a ready-to-paste Markdown report (URL, environment, element table with selectors & component names, console errors, DOM snippet). Paste it into an issue or an LLM chat next to the screenshot.
 - **Copy JSON** / **JSON ↓** — the raw metadata.
 - A settings toggle to also auto-download a `.json` sidecar with every snap.
+- A settings field to change the destination subfolder (default `bowser-snaps`; blank saves straight into `Downloads/`). Chrome extensions can only save inside the Downloads directory, so this is a relative path, not an arbitrary location on disk.
 
 ## Reading the metadata back
 

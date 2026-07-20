@@ -18,6 +18,14 @@
     <input type="checkbox" id="sidecar">
     Also download metadata as a <code>.json</code> sidecar
   </label>
+  <label class="setting setting-folder">
+    Save to <code>Downloads/</code>
+    <input type="text" id="folder" placeholder="bowser-snaps" spellcheck="false">
+  </label>
+  <p class="hint">
+    Subfolder only — Chrome extensions can only save inside your Downloads
+    directory. Leave blank to save directly into Downloads.
+  </p>
 
   <h2>Recent snaps</h2>
   <ul id="captures"></ul>

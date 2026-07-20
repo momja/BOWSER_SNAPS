@@ -109,7 +109,11 @@
 
   // extension/background.js
   var HISTORY_LIMIT = 10;
+  var DEFAULT_FOLDER = "bowser-snaps";
   var RESTRICTED_URL = /^(chrome|chrome-extension|edge|about|devtools|view-source):|^https:\/\/chromewebstore\.google\.com\//;
+  function sanitizeFolder(raw) {
+    return String(raw || "").split("/").map((segment) => segment.trim()).filter((segment) => segment && segment !== "." && segment !== "..").join("/");
+  }
   chrome.commands.onCommand.addListener((command, tab) => {
     if (command === "start-capture") {
       startCapture(tab).catch((err) => console.error("bowser-snaps:", err));
@@ -202,14 +206,15 @@
     const metadata = pending.metadata;
     metadata.report = { description: report && report.description || null };
     const metadataJson = JSON.stringify(metadata, null, 2);
+    const { settings = {} } = await chrome.storage.local.get("settings");
+    const folder = sanitizeFolder(settings.folder ?? DEFAULT_FOLDER);
     const stamped = embedMetadata(fromBase64(pending.pngBase64), METADATA_KEYWORD, metadataJson);
-    const filename = `bowser-snaps/snap-${pending.capturedAt.replace(/[:.]/g, "-")}.png`;
+    const filename = `${folder ? folder + "/" : ""}snap-${pending.capturedAt.replace(/[:.]/g, "-")}.png`;
     await chrome.downloads.download({
       url: `data:image/png;base64,${toBase64(stamped)}`,
       filename,
       conflictAction: "uniquify"
     });
-    const { settings = {} } = await chrome.storage.local.get("settings");
     if (settings.sidecarJson) {
       await chrome.downloads.download({
         url: `data:application/json;base64,${toBase64(new TextEncoder().encode(metadataJson))}`,
