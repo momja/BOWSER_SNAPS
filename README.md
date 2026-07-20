@@ -57,6 +57,8 @@ or with exiftool (the chunk is standard): `exiftool -b -PNG:all snap.png`.
 
 **The JSON structure is a documented contract** — see [SCHEMA.md](SCHEMA.md) for the field-by-field integration guide and [`schema/bowser-snaps.schema.json`](schema/bowser-snaps.schema.json) for the machine-readable JSON Schema. Key off `format` + `schemaVersion` and ignore unknown fields.
 
+Want a local process (a coding agent, a bug-tracker importer, …) to react the instant a snap is saved, instead of reading them after the fact? See [HOOKS.md](HOOKS.md) for the options — directory watching (works today), native messaging, and a local HTTP server (both require extension changes).
+
 Metadata shape (abridged):
 
 ```json
