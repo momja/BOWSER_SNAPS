@@ -24,8 +24,9 @@ export { METADATA_KEYWORD };
  *   A createErrorMonitor() instance whose buffer is included in metadata.
  * @param {string} [options.keyword] PNG iTXt keyword to embed under.
  * @param {object} [options.tool] Identifies the producing app in metadata.
- * @param {(rect) => object|Promise<object>} [options.collect]
- *   Override metadata collection (default: collectRegionMetadata).
+ * @param {(rect, opts: {target: Element|null}) => object|Promise<object>} [options.collect]
+ *   Override metadata collection (default: collectRegionMetadata). `target`
+ *   is the picked element when the user clicked instead of dragging.
  * @param {boolean} [options.promptReport]
  *   Show the bug-report dialog after capture (default true). The pixels are
  *   captured before the dialog opens, so it never appears in the screenshot.
@@ -34,7 +35,7 @@ export function createSnapper({
   capture,
   errorMonitor = null,
   keyword = METADATA_KEYWORD,
-  tool = { name: 'bowser-snaps-sdk', version: '1.1.0' },
+  tool = { name: 'bowser-snaps-sdk', version: '1.2.0' },
   collect = collectRegionMetadata,
   promptReport = true
 } = {}) {
@@ -53,7 +54,7 @@ export function createSnapper({
       if (!rect) return null;
 
       const viewport = { width: window.innerWidth, height: window.innerHeight };
-      const collected = await collect(rect);
+      const collected = await collect(rect, { target: rect.element || null });
       const source = await capture({ rect, viewport });
       const bitmap = source instanceof ImageBitmap ? source : await createImageBitmap(source);
 
@@ -93,6 +94,7 @@ export function createSnapper({
           y: Math.round(rect.y),
           width: Math.round(rect.width),
           height: Math.round(rect.height),
+          mode: rect.mode || 'region',
           unit: 'css-px, viewport-relative',
           pagePosition: {
             x: Math.round(rect.x + window.scrollX),

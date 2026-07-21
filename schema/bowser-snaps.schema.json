@@ -56,13 +56,17 @@
     },
     "selection": {
       "type": "object",
-      "description": "The user-dragged region, in CSS px relative to the viewport at capture time.",
+      "description": "The captured region, in CSS px relative to the viewport at capture time — either dragged out by the user or the viewport-clamped bounds of a clicked element (see `mode`).",
       "required": ["x", "y", "width", "height"],
       "properties": {
         "x": { "type": "number" },
         "y": { "type": "number" },
         "width": { "type": "number" },
         "height": { "type": "number" },
+        "mode": {
+          "enum": ["region", "element"],
+          "description": "How the region was chosen: 'region' = dragged rectangle, 'element' = click-to-select (the region is the picked element's bounds and the picked element leads `elements` with `target: true`). Absent in documents from before this field existed; treat as 'region'."
+        },
         "unit": { "type": "string" },
         "pagePosition": { "$ref": "#/$defs/point" }
       }
@@ -74,13 +78,14 @@
     },
     "elements": {
       "type": "array",
-      "description": "Elements within the selection, most specific (smallest area) first.",
+      "description": "Elements within the selection, most specific (smallest area) first. When selection.mode is 'element', the clicked element is first and carries `target: true`.",
       "items": {
         "type": "object",
         "required": ["selector", "tag", "rectInScreenshot", "coverage"],
         "properties": {
           "selector": { "type": "string", "description": "CSS selector path, id-anchored when possible" },
           "tag": { "type": "string" },
+          "target": { "const": true, "description": "Present (true) only on the element the user clicked in click-to-select mode." },
           "rectInScreenshot": {
             "type": "object",
             "description": "Element bounds relative to the screenshot's top-left, CSS px (multiply by image.scale for image px).",
@@ -116,7 +121,7 @@
     },
     "domSnippet": {
       "type": ["string", "null"],
-      "description": "Sanitized outerHTML of the smallest container spanning the selection; scripts/styles removed, long attribute values and total length truncated."
+      "description": "Sanitized outerHTML of the smallest container spanning the selection (or of the clicked element itself when selection.mode is 'element'); scripts/styles removed, long attribute values and total length truncated."
     },
     "consoleErrors": {
       "type": "array",

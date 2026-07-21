@@ -189,12 +189,15 @@
     while (node && node !== b && !node.contains(b)) node = node.parentElement;
     return node || document.body;
   }
-  function buildSnippet(rect) {
+  function buildSnippet(rect, target) {
     try {
-      const inset = 2;
-      const topLeft = topmostAt(rect.x + inset, rect.y + inset);
-      const bottomRight = topmostAt(rect.x + rect.width - inset, rect.y + rect.height - inset);
-      const container = commonAncestor(topLeft, bottomRight) || document.body;
+      let container = target || null;
+      if (!container) {
+        const inset = 2;
+        const topLeft = topmostAt(rect.x + inset, rect.y + inset);
+        const bottomRight = topmostAt(rect.x + rect.width - inset, rect.y + rect.height - inset);
+        container = commonAncestor(topLeft, bottomRight) || document.body;
+      }
       if (!container) return null;
       const clone = container.cloneNode(true);
       if (clone.querySelectorAll) {
@@ -212,8 +215,9 @@
       return null;
     }
   }
-  function collectRegionMetadata(rect) {
-    const seen = /* @__PURE__ */ new Set();
+  function collectRegionMetadata(rect, { target = null } = {}) {
+    if (target && target.nodeType !== 1) target = null;
+    const seen = new Set(target ? [target] : []);
     const elements = [];
     for (const [x, y] of samplePoints(rect)) {
       for (const el of document.elementsFromPoint(x, y).slice(0, MAX_STACK_PER_POINT)) {
@@ -230,7 +234,12 @@
     const records = elements.map((el) => {
       const r = el.getBoundingClientRect();
       return { el, area: Math.max(1, r.width * r.height) };
-    }).sort((a, b) => a.area - b.area).slice(0, MAX_ELEMENTS).map(({ el }) => elementRecord(el, rect));
+    }).sort((a, b) => a.area - b.area).slice(0, target ? MAX_ELEMENTS - 1 : MAX_ELEMENTS).map(({ el }) => elementRecord(el, rect));
+    if (target) {
+      const rec = elementRecord(target, rect);
+      rec.target = true;
+      records.unshift(rec);
+    }
     const frameworks = detectFrameworks();
     for (const rec of records) {
       const fw = rec.component && rec.component.framework;
@@ -239,8 +248,32 @@
     return {
       elements: records,
       frameworks,
-      domSnippet: buildSnippet(rect)
+      domSnippet: buildSnippet(rect, target)
     };
+  }
+  function resolveElementTarget(descriptor) {
+    if (!descriptor) return null;
+    const wanted = descriptor.rect;
+    const matches = (el) => {
+      if (!wanted) return true;
+      const r = el.getBoundingClientRect();
+      return Math.abs(r.left - wanted.x) <= 2 && Math.abs(r.top - wanted.y) <= 2 && Math.abs(r.width - wanted.width) <= 2 && Math.abs(r.height - wanted.height) <= 2;
+    };
+    let bySelector = null;
+    try {
+      bySelector = descriptor.selector ? document.querySelector(descriptor.selector) : null;
+    } catch {
+    }
+    if (bySelector && matches(bySelector)) return bySelector;
+    if (descriptor.point) {
+      for (let el of document.elementsFromPoint(descriptor.point.x, descriptor.point.y)) {
+        for (let depth = 0; el && depth < 12; depth++, el = el.parentElement) {
+          if (el === document.documentElement || el === document.body) break;
+          if (matches(el)) return el;
+        }
+      }
+    }
+    return bySelector;
   }
 
   // sdk/error-monitor.js
@@ -319,7 +352,7 @@ ${(arg.stack || "").slice(0, 1200)}`;
       if (data.action !== "collect") return;
       let result;
       try {
-        result = collectRegionMetadata(data.rect);
+        result = collectRegionMetadata(data.rect, { target: resolveElementTarget(data.target) });
         result.consoleErrors = errorMonitor.snapshot();
       } catch (err) {
         result = { error: String(err) };

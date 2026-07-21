@@ -15,7 +15,7 @@ Alongside the cropped screenshot, Bowser Snaps collects and embeds:
 | --- | --- |
 | **Your bug description** — a dialog after each capture lets you say what's wrong (markdown welcome), stored verbatim in the metadata | The intent: what's broken and what was expected |
 | **URL, path, query, hash, title** | Locates the route/page in the codebase |
-| **Elements in the selection** — tag, `id`, classes, CSS selector, text, `data-*` / `aria-*` / semantic attributes, position within the screenshot | Maps pixels to source code |
+| **Elements in the selection** — tag, `id`, classes, CSS selector, text, `data-*` / `aria-*` / semantic attributes, position within the screenshot; in click-to-select captures the clicked element is marked as the `target` | Maps pixels to source code |
 | **Component names** — React (fiber owner chain), Vue 2/3, Angular | Jumps straight to the component file |
 | **Frameworks detected** — react, next.js, vue, nuxt, angular (+version), svelte, jQuery, ember | Sets expectations about project structure |
 | **Console errors & warnings** (rolling buffer of the last 30, hooked at `document_start`) | Often *is* the bug |
@@ -36,7 +36,11 @@ Requires Chrome 111+.
 
 1. Press <kbd>⌘⇧S</kbd> (mac) / <kbd>Ctrl+Shift+S</kbd>, or click the toolbar icon → **Snap this page**.
    (Browsers can't intercept the OS-level <kbd>⌘⇧4</kbd>; rebind the shortcut to your liking at `chrome://extensions/shortcuts`.)
-2. Drag over the buggy region. <kbd>Esc</kbd> cancels.
+2. Pick what to snap — both work from the same overlay:
+   - **Click an element** — hovering highlights the element under the cursor (devtools-inspector style, with its tag and size); <kbd>↑</kbd>/<kbd>↓</kbd> widen the pick to the parent / step back down; click (or <kbd>↵</kbd>) captures its exact bounds. The clicked element is recorded in the metadata as the `target`.
+   - **Drag a region** — drag over the buggy area to capture several elements, ⌘⇧4-style.
+
+   <kbd>Esc</kbd> cancels either way.
 3. Describe the bug in the dialog that appears (markdown welcome) — <kbd>⌘/Ctrl+Enter</kbd> or **Save snap** to save, **Skip note** to save without a description, <kbd>Esc</kbd> to discard. The pixels are captured *before* the dialog opens, so it's never in the shot and the page can't drift while you type.
 4. The cropped PNG (metadata embedded) lands in `Downloads/bowser-snaps/`.
 

@@ -63,7 +63,8 @@
       if (page.viewport) {
         lines.push(`- **Viewport:** ${page.viewport.width}\xD7${page.viewport.height} @${page.devicePixelRatio}x, scrolled to (${page.scroll?.x ?? 0}, ${page.scroll?.y ?? 0})`);
       }
-      lines.push(`- **Selected region:** ${sel.width}\xD7${sel.height} at (${sel.x}, ${sel.y}) viewport CSS px`);
+      const targetEl = (m.elements || []).find((el) => el.target);
+      lines.push(`- **Selected region:** ${sel.width}\xD7${sel.height} at (${sel.x}, ${sel.y}) viewport CSS px${sel.mode === "element" && targetEl ? ` \u2014 clicked element \`${cell(targetEl.selector)}\`` : ""}`);
       if (m.frameworks?.length) lines.push(`- **Frameworks:** ${m.frameworks.join(", ")}`);
       lines.push(`- **Screenshot:** \`${shortName(capture.filename)}\` (full metadata embedded as PNG iTXt chunk \`bowser-snaps\`)`);
       lines.push("");
@@ -81,7 +82,7 @@
         lines.push("| --- | --- | --- | --- |");
         for (const el of elements) {
           const r = el.rectInScreenshot || {};
-          lines.push(`| \`${cell(el.selector)}\` | ${el.component?.name ? `\`${cell(el.component.name)}\` (${el.component.framework})` : "\u2014"} | ${el.text ? cell(el.text.slice(0, 60)) : "\u2014"} | ${r.x}, ${r.y}, ${r.width}, ${r.height} |`);
+          lines.push(`| \`${cell(el.selector)}\`${el.target ? " \u2190 clicked" : ""} | ${el.component?.name ? `\`${cell(el.component.name)}\` (${el.component.framework})` : "\u2014"} | ${el.text ? cell(el.text.slice(0, 60)) : "\u2014"} | ${r.x}, ${r.y}, ${r.width}, ${r.height} |`);
         }
         lines.push("");
       }

@@ -3,7 +3,7 @@
 // requests with access to framework internals (React fibers, Vue instances)
 // that isolated worlds can't see. Talks to content.js over window.postMessage.
 // Bundled with its SDK imports by tools/build.mjs.
-import { collectRegionMetadata } from '../sdk/collect.js';
+import { collectRegionMetadata, resolveElementTarget } from '../sdk/collect.js';
 import { createErrorMonitor } from '../sdk/error-monitor.js';
 
 (() => {
@@ -19,7 +19,7 @@ import { createErrorMonitor } from '../sdk/error-monitor.js';
     if (data.action !== 'collect') return;
     let result;
     try {
-      result = collectRegionMetadata(data.rect);
+      result = collectRegionMetadata(data.rect, { target: resolveElementTarget(data.target) });
       result.consoleErrors = errorMonitor.snapshot();
     } catch (err) {
       result = { error: String(err) };

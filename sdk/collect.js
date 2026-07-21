@@ -240,12 +240,15 @@ function commonAncestor(a, b) {
   return node || document.body;
 }
 
-function buildSnippet(rect) {
+function buildSnippet(rect, target) {
   try {
-    const inset = 2;
-    const topLeft = topmostAt(rect.x + inset, rect.y + inset);
-    const bottomRight = topmostAt(rect.x + rect.width - inset, rect.y + rect.height - inset);
-    const container = commonAncestor(topLeft, bottomRight) || document.body;
+    let container = target || null;
+    if (!container) {
+      const inset = 2;
+      const topLeft = topmostAt(rect.x + inset, rect.y + inset);
+      const bottomRight = topmostAt(rect.x + rect.width - inset, rect.y + rect.height - inset);
+      container = commonAncestor(topLeft, bottomRight) || document.body;
+    }
     if (!container) return null;
 
     const clone = container.cloneNode(true);
@@ -271,10 +274,17 @@ function buildSnippet(rect) {
  * Collect metadata about everything within a viewport region.
  * @param {{x: number, y: number, width: number, height: number}} rect
  *   Selection in CSS px, viewport-relative.
+ * @param {{target?: Element|null}} [options]
+ *   `target` — the element the user clicked in the overlay's element-pick
+ *   mode. Its record leads the list (marked `target: true`, exempt from the
+ *   element cap) and the DOM snippet is its own outerHTML rather than the
+ *   region's common container.
  * @returns {{elements: object[], frameworks: string[], domSnippet: string|null}}
  */
-export function collectRegionMetadata(rect) {
-  const seen = new Set();
+export function collectRegionMetadata(rect, { target = null } = {}) {
+  if (target && target.nodeType !== 1) target = null;
+
+  const seen = new Set(target ? [target] : []);
   const elements = [];
   for (const [x, y] of samplePoints(rect)) {
     for (const el of document.elementsFromPoint(x, y).slice(0, MAX_STACK_PER_POINT)) {
@@ -296,8 +306,14 @@ export function collectRegionMetadata(rect) {
       return { el, area: Math.max(1, r.width * r.height) };
     })
     .sort((a, b) => a.area - b.area)
-    .slice(0, MAX_ELEMENTS)
+    .slice(0, target ? MAX_ELEMENTS - 1 : MAX_ELEMENTS)
     .map(({ el }) => elementRecord(el, rect));
+
+  if (target) {
+    const rec = elementRecord(target, rect);
+    rec.target = true;
+    records.unshift(rec);
+  }
 
   const frameworks = detectFrameworks();
   for (const rec of records) {
@@ -308,6 +324,66 @@ export function collectRegionMetadata(rect) {
   return {
     elements: records,
     frameworks,
-    domSnippet: buildSnippet(rect)
+    domSnippet: buildSnippet(rect, target)
   };
+}
+
+// --- target handoff across JS worlds ---------------------------------------------
+
+// A DOM element can't cross postMessage (the Chrome extension picks the
+// element in the isolated world but collects in the MAIN world), so the
+// picked element travels as a serializable descriptor and is re-resolved on
+// the other side.
+
+/** Serializable descriptor for a picked element: selector + center point + bounds. */
+export function describeElementTarget(el) {
+  const r = el.getBoundingClientRect();
+  // Center of the on-screen part of the element, kept inside the viewport.
+  const x1 = Math.max(r.left, 0);
+  const y1 = Math.max(r.top, 0);
+  const x2 = Math.min(r.right, window.innerWidth);
+  const y2 = Math.min(r.bottom, window.innerHeight);
+  return {
+    selector: buildSelector(el),
+    point: {
+      x: Math.min((x1 + x2) / 2, window.innerWidth - 1),
+      y: Math.min((y1 + y2) / 2, window.innerHeight - 1)
+    },
+    rect: { x: r.left, y: r.top, width: r.width, height: r.height }
+  };
+}
+
+/**
+ * Re-resolve a describeElementTarget() descriptor to a live element, or null.
+ * Tries the selector (verified against the recorded bounds), then hit-tests
+ * the recorded center point walking up until the bounds match, then falls
+ * back to the bare selector match (the DOM may have shifted slightly).
+ */
+export function resolveElementTarget(descriptor) {
+  if (!descriptor) return null;
+  const wanted = descriptor.rect;
+  const matches = (el) => {
+    if (!wanted) return true;
+    const r = el.getBoundingClientRect();
+    return Math.abs(r.left - wanted.x) <= 2 && Math.abs(r.top - wanted.y) <= 2 &&
+           Math.abs(r.width - wanted.width) <= 2 && Math.abs(r.height - wanted.height) <= 2;
+  };
+
+  let bySelector = null;
+  try {
+    bySelector = descriptor.selector ? document.querySelector(descriptor.selector) : null;
+  } catch {
+    // A selector that doesn't parse here (exotic characters) — fall through.
+  }
+  if (bySelector && matches(bySelector)) return bySelector;
+
+  if (descriptor.point) {
+    for (let el of document.elementsFromPoint(descriptor.point.x, descriptor.point.y)) {
+      for (let depth = 0; el && depth < 12; depth++, el = el.parentElement) {
+        if (el === document.documentElement || el === document.body) break;
+        if (matches(el)) return el;
+      }
+    }
+  }
+  return bySelector;
 }

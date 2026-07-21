@@ -3,7 +3,7 @@
 // back to local collection), and ships the result to the service worker.
 // Bundled with its SDK imports by tools/build.mjs.
 import { selectRegion, showToast } from '../sdk/selection-overlay.js';
-import { collectRegionMetadata } from '../sdk/collect.js';
+import { collectRegionMetadata, describeElementTarget } from '../sdk/collect.js';
 import { buildPageContext } from '../sdk/page-context.js';
 import { promptBugReport } from '../sdk/report-dialog.js';
 
@@ -31,7 +31,11 @@ import { promptBugReport } from '../sdk/report-dialog.js';
   async function run() {
     const rect = await selectRegion();
     if (!rect) return;
-    const collected = await collectViaPageAgent(rect);
+    // The picked element (click mode) can't cross postMessage/sendMessage;
+    // it travels as a serializable descriptor from here on.
+    const target = rect.mode === 'element' && rect.element ? describeElementTarget(rect.element) : null;
+    const plainRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    const collected = await collectViaPageAgent(plainRect, target, rect.element || null);
     const selection = {
       x: Math.round(rect.x),
       y: Math.round(rect.y),
@@ -46,6 +50,7 @@ import { promptBugReport } from '../sdk/report-dialog.js';
         page: buildPageContext(),
         selection: {
           ...selection,
+          mode: rect.mode || 'region',
           unit: 'css-px, viewport-relative',
           pagePosition: {
             x: selection.x + Math.round(window.scrollX),
@@ -77,13 +82,15 @@ import { promptBugReport } from '../sdk/report-dialog.js';
   }
 
   // Ask the MAIN-world page agent (component names + console errors); fall
-  // back to local isolated-world collection if it doesn't answer.
-  function collectViaPageAgent(rect) {
+  // back to local isolated-world collection if it doesn't answer. `target`
+  // is the picked element's descriptor for the agent; `targetElement` is the
+  // live node this world already holds, used by the fallback.
+  function collectViaPageAgent(rect, target, targetElement) {
     return new Promise((resolve) => {
       const id = Math.random().toString(36).slice(2);
       const fallback = () => {
         try {
-          resolve(collectRegionMetadata(rect));
+          resolve(collectRegionMetadata(rect, { target: targetElement }));
         } catch {
           resolve({});
         }
@@ -101,7 +108,7 @@ import { promptBugReport } from '../sdk/report-dialog.js';
         else fallback();
       }
       window.addEventListener('message', onMessage);
-      window.postMessage({ __bowserSnaps: 'request', id, action: 'collect', rect }, '*');
+      window.postMessage({ __bowserSnaps: 'request', id, action: 'collect', rect, target }, '*');
     });
   }
 })();

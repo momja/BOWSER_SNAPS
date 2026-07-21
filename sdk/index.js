@@ -11,8 +11,10 @@
 // Building blocks (used by the Chrome extension, reusable individually):
 //   promptBugReport             — post-capture bug description dialog
 //   FORMAT / SCHEMA_VERSION     — metadata envelope contract (see SCHEMA.md)
-//   selectRegion / showToast    — drag-select overlay UI
+//   selectRegion / showToast    — click-or-drag selection overlay UI
 //   collectRegionMetadata       — elements/components/frameworks/DOM snippet
+//   describeElementTarget / resolveElementTarget — picked-element handoff
+//                                 across JS worlds (extension glue)
 //   createErrorMonitor          — console/error rolling buffer
 //   buildPageContext            — URL/viewport/scroll/user-agent snapshot
 //   deviceRect / cropToPng / cropToJpegThumbnail — bitmap cropping
@@ -22,7 +24,7 @@ export { createSnapper, captureViaDisplayMedia, downloadSnap } from './snapper.j
 export { promptBugReport } from './report-dialog.js';
 export { FORMAT, SCHEMA_VERSION, METADATA_KEYWORD } from './schema.js';
 export { selectRegion, showToast } from './selection-overlay.js';
-export { collectRegionMetadata, detectFrameworks } from './collect.js';
+export { collectRegionMetadata, detectFrameworks, describeElementTarget, resolveElementTarget } from './collect.js';
 export { createErrorMonitor } from './error-monitor.js';
 export { buildPageContext } from './page-context.js';
 export { deviceRect, cropToPng, cropToJpegThumbnail } from './crop.js';

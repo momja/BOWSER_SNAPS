@@ -1,11 +1,40 @@
 (() => {
   // sdk/selection-overlay.js
   var MAX_Z = 2147483647;
+  var DRAG_THRESHOLD = 4;
   function nextPaint() {
     return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }
   var activeTeardown = null;
-  function selectRegion({ hintText = "Drag to snap a region \xB7 Esc to cancel" } = {}) {
+  var clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  function elementAt(x, y, host) {
+    for (const el of document.elementsFromPoint(x, y)) {
+      if (el === host || el === document.documentElement || el === document.body) continue;
+      return el;
+    }
+    return null;
+  }
+  function viewportRect(el) {
+    const r = el.getBoundingClientRect();
+    const x = clamp(r.left, 0, window.innerWidth);
+    const y = clamp(r.top, 0, window.innerHeight);
+    return {
+      x,
+      y,
+      width: clamp(r.right, 0, window.innerWidth) - x,
+      height: clamp(r.bottom, 0, window.innerHeight) - y
+    };
+  }
+  function describeElement(el, rect) {
+    let name = el.localName;
+    if (el.id) name += "#" + el.id;
+    else {
+      const classes = [...el.classList].slice(0, 2);
+      if (classes.length) name += "." + classes.join(".");
+    }
+    return `${name} \xB7 ${Math.round(rect.width)} \xD7 ${Math.round(rect.height)}`;
+  }
+  function selectRegion({ hintText = "Click an element or drag a region \xB7 \u2191 \u2193 parent/child \xB7 Esc to cancel" } = {}) {
     if (activeTeardown) return Promise.resolve(null);
     return new Promise((resolve) => {
       const host = document.createElement("bowser-snaps-overlay");
@@ -20,6 +49,17 @@
           font: 13px/1.4 -apple-system, system-ui, sans-serif;
           padding: 6px 14px; border-radius: 999px; pointer-events: none;
         }
+        .pick {
+          position: fixed; display: none; pointer-events: none;
+          border: 1px solid #58a6ff; background: rgba(88, 166, 255, .18);
+        }
+        .pick-label {
+          position: absolute; left: 0; top: 100%; margin-top: 6px;
+          background: rgba(20, 20, 24, .88); color: #fff;
+          font: 11px/1 ui-monospace, monospace;
+          padding: 4px 6px; border-radius: 4px; white-space: nowrap;
+        }
+        .pick-label.above { top: auto; bottom: 100%; margin: 0 0 6px; }
         .box {
           position: fixed; display: none; pointer-events: none;
           border: 1px solid #58a6ff; background: rgba(88, 166, 255, .10);
@@ -34,14 +74,20 @@
       </style>
       <div class="backdrop"></div>
       <div class="hint"></div>
+      <div class="pick"><div class="pick-label"></div></div>
       <div class="box"><div class="size"></div></div>`;
       root.querySelector(".hint").textContent = hintText;
       const backdrop = root.querySelector(".backdrop");
+      const pick = root.querySelector(".pick");
+      const pickLabel = root.querySelector(".pick-label");
       const box = root.querySelector(".box");
       const sizeLabel = root.querySelector(".size");
       const hint = root.querySelector(".hint");
       let start = null;
-      const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+      let dragging = false;
+      let hoverEl = null;
+      let current = null;
+      let descentStack = [];
       const currentRect = (e) => {
         const x2 = clamp(e.clientX, 0, window.innerWidth);
         const y2 = clamp(e.clientY, 0, window.innerHeight);
@@ -52,10 +98,34 @@
           height: Math.abs(y2 - start.y)
         };
       };
-      const finish = async (rect) => {
+      const finish = async (result) => {
         teardown();
         await nextPaint();
-        resolve(rect && rect.width >= 4 && rect.height >= 4 ? rect : null);
+        resolve(result);
+      };
+      const finishRegion = (rect) => {
+        finish(rect && rect.width >= DRAG_THRESHOLD && rect.height >= DRAG_THRESHOLD ? { ...rect, mode: "region" } : null);
+      };
+      const finishElement = (el) => {
+        if (!el) return;
+        const rect = viewportRect(el);
+        if (rect.width < 1 || rect.height < 1) return;
+        finish({ ...rect, mode: "element", element: el });
+      };
+      const highlight = (el) => {
+        current = el;
+        if (!el) {
+          pick.style.display = "none";
+          return;
+        }
+        const r = viewportRect(el);
+        pick.style.display = "block";
+        pick.style.left = r.x + "px";
+        pick.style.top = r.y + "px";
+        pick.style.width = r.width + "px";
+        pick.style.height = r.height + "px";
+        pickLabel.textContent = describeElement(el, r);
+        pickLabel.classList.toggle("above", r.y + r.height > window.innerHeight - 32);
       };
       const onMouseDown = (e) => {
         if (e.button !== 0) {
@@ -64,28 +134,63 @@
         }
         e.preventDefault();
         start = { x: e.clientX, y: e.clientY };
+        dragging = false;
         hint.style.display = "none";
       };
       const onMouseMove = (e) => {
-        if (!start) return;
-        e.preventDefault();
-        const r = currentRect(e);
-        box.style.display = "block";
-        box.style.left = r.x + "px";
-        box.style.top = r.y + "px";
-        box.style.width = r.width + "px";
-        box.style.height = r.height + "px";
-        sizeLabel.textContent = `${Math.round(r.width)} \xD7 ${Math.round(r.height)}`;
+        if (start) {
+          e.preventDefault();
+          if (!dragging) {
+            if (Math.abs(e.clientX - start.x) < DRAG_THRESHOLD && Math.abs(e.clientY - start.y) < DRAG_THRESHOLD) return;
+            dragging = true;
+            pick.style.display = "none";
+          }
+          const r = currentRect(e);
+          box.style.display = "block";
+          box.style.left = r.x + "px";
+          box.style.top = r.y + "px";
+          box.style.width = r.width + "px";
+          box.style.height = r.height + "px";
+          sizeLabel.textContent = `${Math.round(r.width)} \xD7 ${Math.round(r.height)}`;
+          return;
+        }
+        const el = elementAt(e.clientX, e.clientY, host);
+        if (el !== hoverEl) {
+          hoverEl = el;
+          descentStack = [];
+          highlight(el);
+        }
       };
       const onMouseUp = (e) => {
         if (!start) return;
-        finish(currentRect(e));
+        if (dragging) {
+          finishRegion(currentRect(e));
+        } else {
+          finishElement(current);
+          start = null;
+        }
       };
       const onKeyDown = (e) => {
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
           finish(null);
+          return;
+        }
+        if (start) return;
+        if (e.key === "ArrowUp" && current) {
+          e.preventDefault();
+          const parent = current.parentElement;
+          if (parent && parent !== document.body && parent !== document.documentElement) {
+            descentStack.push(current);
+            highlight(parent);
+          }
+        } else if (e.key === "ArrowDown" && descentStack.length) {
+          e.preventDefault();
+          highlight(descentStack.pop());
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          finishElement(current);
         }
       };
       function teardown() {
@@ -312,12 +417,15 @@
     while (node && node !== b && !node.contains(b)) node = node.parentElement;
     return node || document.body;
   }
-  function buildSnippet(rect) {
+  function buildSnippet(rect, target) {
     try {
-      const inset = 2;
-      const topLeft = topmostAt(rect.x + inset, rect.y + inset);
-      const bottomRight = topmostAt(rect.x + rect.width - inset, rect.y + rect.height - inset);
-      const container = commonAncestor(topLeft, bottomRight) || document.body;
+      let container = target || null;
+      if (!container) {
+        const inset = 2;
+        const topLeft = topmostAt(rect.x + inset, rect.y + inset);
+        const bottomRight = topmostAt(rect.x + rect.width - inset, rect.y + rect.height - inset);
+        container = commonAncestor(topLeft, bottomRight) || document.body;
+      }
       if (!container) return null;
       const clone = container.cloneNode(true);
       if (clone.querySelectorAll) {
@@ -335,8 +443,9 @@
       return null;
     }
   }
-  function collectRegionMetadata(rect) {
-    const seen = /* @__PURE__ */ new Set();
+  function collectRegionMetadata(rect, { target = null } = {}) {
+    if (target && target.nodeType !== 1) target = null;
+    const seen = new Set(target ? [target] : []);
     const elements = [];
     for (const [x, y] of samplePoints(rect)) {
       for (const el of document.elementsFromPoint(x, y).slice(0, MAX_STACK_PER_POINT)) {
@@ -353,7 +462,12 @@
     const records = elements.map((el) => {
       const r = el.getBoundingClientRect();
       return { el, area: Math.max(1, r.width * r.height) };
-    }).sort((a, b) => a.area - b.area).slice(0, MAX_ELEMENTS).map(({ el }) => elementRecord(el, rect));
+    }).sort((a, b) => a.area - b.area).slice(0, target ? MAX_ELEMENTS - 1 : MAX_ELEMENTS).map(({ el }) => elementRecord(el, rect));
+    if (target) {
+      const rec = elementRecord(target, rect);
+      rec.target = true;
+      records.unshift(rec);
+    }
     const frameworks = detectFrameworks();
     for (const rec of records) {
       const fw = rec.component && rec.component.framework;
@@ -362,7 +476,22 @@
     return {
       elements: records,
       frameworks,
-      domSnippet: buildSnippet(rect)
+      domSnippet: buildSnippet(rect, target)
+    };
+  }
+  function describeElementTarget(el) {
+    const r = el.getBoundingClientRect();
+    const x1 = Math.max(r.left, 0);
+    const y1 = Math.max(r.top, 0);
+    const x2 = Math.min(r.right, window.innerWidth);
+    const y2 = Math.min(r.bottom, window.innerHeight);
+    return {
+      selector: buildSelector(el),
+      point: {
+        x: Math.min((x1 + x2) / 2, window.innerWidth - 1),
+        y: Math.min((y1 + y2) / 2, window.innerHeight - 1)
+      },
+      rect: { x: r.left, y: r.top, width: r.width, height: r.height }
     };
   }
 
@@ -513,7 +642,9 @@
     async function run() {
       const rect = await selectRegion();
       if (!rect) return;
-      const collected = await collectViaPageAgent(rect);
+      const target = rect.mode === "element" && rect.element ? describeElementTarget(rect.element) : null;
+      const plainRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      const collected = await collectViaPageAgent(plainRect, target, rect.element || null);
       const selection = {
         x: Math.round(rect.x),
         y: Math.round(rect.y),
@@ -528,6 +659,7 @@
           page: buildPageContext(),
           selection: {
             ...selection,
+            mode: rect.mode || "region",
             unit: "css-px, viewport-relative",
             pagePosition: {
               x: selection.x + Math.round(window.scrollX),
@@ -554,12 +686,12 @@
         report: { description: outcome.action === "save" ? outcome.description : null }
       });
     }
-    function collectViaPageAgent(rect) {
+    function collectViaPageAgent(rect, target, targetElement) {
       return new Promise((resolve) => {
         const id = Math.random().toString(36).slice(2);
         const fallback = () => {
           try {
-            resolve(collectRegionMetadata(rect));
+            resolve(collectRegionMetadata(rect, { target: targetElement }));
           } catch {
             resolve({});
           }
@@ -577,7 +709,7 @@
           else fallback();
         }
         window.addEventListener("message", onMessage);
-        window.postMessage({ __bowserSnaps: "request", id, action: "collect", rect }, "*");
+        window.postMessage({ __bowserSnaps: "request", id, action: "collect", rect, target }, "*");
       });
     }
   })();

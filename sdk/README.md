@@ -40,8 +40,8 @@ const snapper = createSnapper({
 
 // 3. Wire it to a button / hotkey.
 document.getElementById('report-bug').addEventListener('click', async () => {
-  const snap = await snapper.snap();     // drag a region → bug-report dialog;
-  if (!snap) return;                     // null if cancelled/discarded
+  const snap = await snapper.snap();     // click an element or drag a region
+  if (!snap) return;                     // → bug-report dialog; null if cancelled
 
   downloadSnap(snap);                    // or upload snap.blob / snap.bytes
   console.log(snap.metadata.report);     // { description } from the dialog
@@ -77,9 +77,10 @@ All exported from `bowser-snaps` (see `index.js`); each is usable on its own:
 | --- | --- |
 | `promptBugReport({ thumbnailUrl? })` | post-capture description dialog; resolves `{action: 'save', description}` \| `{action: 'skip'}` \| `{action: 'discard'}` |
 | `FORMAT`, `SCHEMA_VERSION`, `METADATA_KEYWORD` | the metadata envelope contract constants |
-| `selectRegion({ hintText? })` | macOS-style drag overlay; resolves `{x, y, width, height}` in CSS px, or `null` on cancel — after the overlay is gone and the page repainted |
+| `selectRegion({ hintText? })` | click-or-drag selection overlay: hover highlights the element under the cursor (↑/↓ walk to parent/child, click or ↵ picks it), dragging selects a rectangle; resolves `{x, y, width, height, mode}` in CSS px — `mode` is `'element'` (plus an `element` property with the picked node) or `'region'` — or `null` on cancel, after the overlay is gone and the page repainted |
+| `describeElementTarget(el)` / `resolveElementTarget(desc)` | serialize a picked element to a `{selector, point, rect}` descriptor and re-resolve it in another JS world (used by the extension's isolated→MAIN world handoff) |
 | `showToast(text, { isError? })` | shadow-DOM toast used for capture feedback |
-| `collectRegionMetadata(rect)` | `{ elements, frameworks, domSnippet }` for a viewport rect |
+| `collectRegionMetadata(rect, { target? })` | `{ elements, frameworks, domSnippet }` for a viewport rect; pass the picked element as `target` to lead the list with it (`target: true`) and snippet its own markup |
 | `createErrorMonitor({ maxEntries? })` | console/error rolling buffer → `snapshot()` / `dispose()` |
 | `buildPageContext()` | URL, viewport, scroll, DPR, user agent snapshot |
 | `deviceRect`, `cropToPng`, `cropToJpegThumbnail` | map CSS-px rects onto a bitmap and cut them out (OffscreenCanvas; worker-safe) |

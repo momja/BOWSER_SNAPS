@@ -1,7 +1,9 @@
 // E2E: load the built extension (dist/) into Chromium, drive a real
 // drag-capture on a test page (ids/classes/data-attrs, a console.error, and
 // a synthetic React fiber), then assert the stored capture record and the
-// downloaded PNG's embedded metadata.
+// downloaded PNG's embedded metadata. A second leg drives click-to-select:
+// hover an element, ↑/↓ parent-child navigation, click, and asserts the
+// element-mode selection and target marking.
 //
 //   npm run build && npm run test:e2e     (needs xvfb; see package.json)
 //
@@ -98,6 +100,7 @@ try {
   assert.strictEqual(meta.report.description, DESCRIPTION, 'bug description stored verbatim');
   assert.strictEqual(meta.page.url, `http://127.0.0.1:${PORT}/`, 'page url recorded');
   assert.strictEqual(meta.page.path, '/', 'path recorded');
+  assert.strictEqual(meta.selection.mode, 'region', 'drag capture recorded as region mode');
   assert.ok(meta.selection.width >= 395 && meta.selection.width <= 405, `selection width ~400, got ${meta.selection.width}`);
   assert.ok(meta.image.width > 0 && meta.image.height > 0, 'image dimensions recorded');
 
@@ -148,10 +151,56 @@ try {
   assert.strictEqual(width, meta.image.width, 'png width matches');
   assert.strictEqual(height, meta.image.height, 'png height matches');
 
+  // --- Leg 2: click-to-select an element (penpot-visual-fetch style) --------
+  const btn = await page.evaluate(() => {
+    const r = document.getElementById('pay-button').getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2, width: r.width, height: r.height };
+  });
+
+  await sw.evaluate(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    await globalThis.__bowserSnapsStartCapture(tab);
+  });
+  await page.waitForTimeout(300);
+
+  // Hover the button, walk up to the card and back down, then click it.
+  await page.mouse.move(btn.x, btn.y);
+  await page.waitForTimeout(100);
+  await page.keyboard.press('ArrowUp');    // expand to #cart-summary
+  await page.keyboard.press('ArrowDown');  // back to #pay-button
+  await page.mouse.down();
+  await page.mouse.up();
+
+  await page.waitForTimeout(1000);            // report dialog opens
+  await page.keyboard.press('Control+Enter'); // save without a note
+
+  let captures2 = [];
+  for (let i = 0; i < 40 && captures2.length < 2; i++) {
+    await page.waitForTimeout(250);
+    ({ captures: captures2 = [] } = await sw.evaluate(() => chrome.storage.local.get('captures')));
+  }
+  assert.strictEqual(captures2.length, 2, 'click-select capture stored');
+  const clickMeta = captures2[0].metadata; // history is newest-first
+
+  assert.strictEqual(clickMeta.selection.mode, 'element', 'element mode recorded');
+  assert.ok(Math.abs(clickMeta.selection.width - btn.width) <= 2,
+    `selection width matches button (${btn.width}), got ${clickMeta.selection.width}`);
+  assert.ok(Math.abs(clickMeta.selection.height - btn.height) <= 2,
+    `selection height matches button (${btn.height}), got ${clickMeta.selection.height}`);
+  assert.strictEqual(clickMeta.elements[0].selector, '#pay-button', 'clicked element leads the element list');
+  assert.strictEqual(clickMeta.elements[0].target, true, 'clicked element marked as target');
+  assert.strictEqual(clickMeta.elements[0].component?.name, 'PayButton',
+    'target resolved in the MAIN world (component visible)');
+  assert.strictEqual(clickMeta.report.description, null, 'empty note stored as null');
+  assert.ok(clickMeta.domSnippet && clickMeta.domSnippet.startsWith('<button'),
+    `DOM snippet is the clicked element, got: ${String(clickMeta.domSnippet).slice(0, 60)}`);
+  assert.ok(!clickMeta.elements.slice(1).some((e) => e.target), 'only the clicked element is marked target');
+
   console.log('E2E passed:');
   console.log(`  file: ${done.filename} (${width}×${height})`);
   console.log(`  elements: ${selectors.length} collected → ${selectors.slice(0, 6).join(', ')}…`);
   console.log(`  console errors: ${meta.consoleErrors.length}`);
+  console.log(`  click-select: ${clickMeta.elements[0].selector} (${clickMeta.selection.width}×${clickMeta.selection.height}, mode=${clickMeta.selection.mode})`);
 } finally {
   await context.close();
   server.close();

@@ -56,9 +56,14 @@ const doc = JSON.parse(readMetadata(pngBytes, METADATA_KEYWORD));
     "language": "en-US"
   },
 
-  // The dragged region, CSS px relative to the viewport; pagePosition adds
-  // the scroll offset (document coordinates).
+  // The captured region, CSS px relative to the viewport; pagePosition adds
+  // the scroll offset (document coordinates). `mode` says how it was chosen:
+  // "region" = dragged rectangle, "element" = click-to-select (the region is
+  // the clicked element's viewport-clamped bounds, and that element leads
+  // `elements` with `target: true`). Older documents lack `mode` — treat its
+  // absence as "region".
   "selection": { "x": 30, "y": 60, "width": 400, "height": 170,
+                 "mode": "region",
                  "unit": "css-px, viewport-relative",
                  "pagePosition": { "x": 30, "y": 400 } },
 
@@ -66,11 +71,14 @@ const doc = JSON.parse(readMetadata(pngBytes, METADATA_KEYWORD));
 
   // Elements inside the region, most specific (smallest) first, max 40.
   // Sourced from painted-element sampling + semantic elements (buttons,
-  // inputs, headings, [data-testid], …) intersecting the region.
+  // inputs, headings, [data-testid], …) intersecting the region. In
+  // click-to-select captures the clicked element is always first, marked
+  // `"target": true` (the field is absent on every other element).
   "elements": [
     {
       "selector": "#pay-button",       // id-anchored when possible
       "tag": "button",
+      "target": true,                  // only in element-mode captures, on the clicked element
       "id": "pay-button",              // present only if set
       "classes": ["btn", "btn-primary"],
       "component": {                   // present when framework internals visible
@@ -85,9 +93,10 @@ const doc = JSON.parse(readMetadata(pngBytes, METADATA_KEYWORD));
     }
   ],
 
-  // Sanitized outerHTML of the smallest container spanning the region
-  // (scripts/styles stripped, long attributes truncated, ≤ ~4KB). null if
-  // it couldn't be computed.
+  // Sanitized outerHTML of the smallest container spanning the region — or
+  // of the clicked element itself in element-mode captures (scripts/styles
+  // stripped, long attributes truncated, ≤ ~4KB). null if it couldn't be
+  // computed.
   "domSnippet": "<section id=\"cart-summary\" …>…</section>",
 
   // Console/error activity up to capture time (oldest first, max 30).
